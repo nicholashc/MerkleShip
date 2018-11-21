@@ -6,8 +6,15 @@ TO ADD:
   - if they do not, the other player can claim the prize
 - checks for valid ship position
 - helper function to reconstruct game board from guesses
-- check length of leaves
 - Q? do i have to keep initializing structs in sequential functions?
+- add another value in the leaf string that detmines ship type
+- update to 0.5.0
+
+12 ship squares
+one 4-long
+one 3-long
+one 2-long
+three 1-long
 */
 
 pragma solidity ^0.4.25;
@@ -33,13 +40,15 @@ contract MerkleShip {
   mapping (uint32 => Game) public games;
   //ETH available for user withdrawal
   mapping (address => uint) public userBalance;
+  //separte timer to track PendingVictory claim time
+  mapping (uint32 => uint256) public claimTimer;
 
-  enum GameState { Ready, Cancelled, Active, Abandoned, Complete }
+  enum GameState { Ready, Cancelled, Active, Abandoned, PendingVictory, Complete }
   enum Turn { Inactive, PlayerA, PlayerB }
   enum GuessState { Unknown, Pending, Hit, Miss }
 
   struct Game {
-    //global gameCount; will overflow at 4294967295
+    //global gameCount; will overflow if there are more than 4,294,967,295 games 
     uint32 id; 
     //turn start time; reset at start of each term; will overflow February 7, 2106
     uint32 turnStartTime; 
@@ -59,8 +68,7 @@ contract MerkleShip {
     //game state; takes 8 bits of storage
     GameState state; 
     //turn state; takes 8 bits of storage
-    Turn turn; //4 bits needed
-    
+    Turn turn; 
     //note: the above packs tightly into three 256-bit words
     //merkle root of playerA secret game board
     bytes32 playerAMerkleRoot;
@@ -176,6 +184,11 @@ contract MerkleShip {
     bool verfied
   );
 
+  event LogPendingVictory(
+    uint256 indexed gameID,
+    address indexed winner
+  );
+
   event LogWinner(
     uint256 indexed gameID,
     address indexed winner,
@@ -282,7 +295,7 @@ contract MerkleShip {
   {
     require (_proof.length == 6, "the merkle proof must be the correct length");
     //@dev add length check for _leafData here?
-    require (_checkString(_smackTalk), "smack talk must be a valid string");
+    require (_isValidString(_smackTalk), "smack talk must be a valid string");
     //convert coordinates to index 
     //this function checks that the coordinate is inbounds 
     uint8 square = _coordinateToIndex(_square[0], _square[1]);
@@ -350,7 +363,7 @@ contract MerkleShip {
       guessToReveal = uint8(g.playerAguesses[g.playerAguesses.length - 1]);
     }
     //check the first byte of the revealed data to confirm if there was a ship in that square
-    bytes1 isHit = _strFirstChar(_leafData);
+    bytes1 isHit = _subString(_leafData, 0);
     require (isHit == 0x31 || isHit == 0x30, "leaf data must be in correct format")
     //update state if there was a hit
     //0x31 is 1 in bytes1
@@ -391,23 +404,18 @@ contract MerkleShip {
     Game storage g = games[_id];
     //check for winner
     if (g.playerAhitCount == hitThreshold) {
-      g.state = GameState.Complete;
+      g.state = GameState.PendingVictory;
       g.winner = games[_id].playerB;
     } 
     else if (g.playerBhitCount == hitThreshold) {
-      g.state = GameState.Complete;
+      g.state = GameState.PendingVictory;
       g.winner = games[_id].playerA;
     } 
-
-    //@dev: this should go to 'PendingVictory', which a potential winner can claim by revealing honest game state
     //process winner
-    if (g.state == GameState.Complete) {
-      //calculate prize
-      uint256 prize = games[_id].wager * 2;
-      //update winner balance
-      userBalance[g.winner] += prize;
-
-      emit LogWinner(_id, g.winner, "victory by hit count");
+    if (g.state == GameState.PendingVictory) {
+      claimTimer[_id] = now;
+      
+      emit LogPendingVictory(_id, msg.sender);
     }
   }
 
@@ -481,6 +489,108 @@ contract MerkleShip {
 
     emit LogWinner(_id, g.winner, "victory by consession");
   }
+
+  /*
+  * in the case of a victory by hit, the winner must provide provide that had an honest game board
+  * without this proof the winner could have submitted a board with no ships, for example
+  * if the winner cannot prove their honest play, the other wins the prize
+  * @dev: the gas costs of this function are going to be crazy, research a better way to handle this case
+  */
+  function claimPrize(uint32 _id, string[64] _leaves) 
+    external
+    isPlayer(_id) 
+  {
+    //initialize struct in storage 
+    Game storage g = games[_id];
+
+    require (g.state = GameState.PendingVictory, "this game must be pending proof of honest play");
+
+    //check that hitThreshold number of squares start with 1
+    uint256 shipCount;
+    for (uint256 i = 0; i < 64; i++) {
+      if (_subString(_leaves[i], 0) == 0x31) {
+        shipCount++;
+        if (shipCount == hitThreshold) {
+          break;
+        }
+      }
+    }
+
+    require (shipCount == hitThreshold, "you must have set the correct number of ship squares");
+
+    //confirm that each ship more than one square long has the correct adjacencies
+    uint256 longShipsVerfied;
+    for (i = 0; i < 64; i++) {
+      if (_subString[_leaves[i], 3] == 0x34) {
+        require (
+          _subString[_leaves[i + 1] == 0x34 &&
+          _subString[_leaves[i + 2] == 0x34 &&
+          _subString[_leaves[i + 3] == 0x34 ||
+          _subString[_leaves[i + rows] == 0x34 &&
+          _subString[_leaves[i + 2 * rows] == 0x34 &&
+          _subString[_leaves[i + 3 * rows] == 0x34,
+          "you must have one ship that is four squares long" 
+        )
+        longShipsVerfied++;
+      }
+      if (_subString[_leaves[i], 3] == 0x33) {
+        require (
+          _subString[_leaves[i + 1] == 0x34 &&
+          _subString[_leaves[i + 2] == 0x34 ||
+          _subString[_leaves[i + rows] == 0x34 &&
+          _subString[_leaves[i + 2 * rows] == 0x34,
+          "you must have one ship that is three squares long" 
+        )
+        longShipsVerfied++;
+      }
+      if (_subString[_leaves[i], 3] == 0x32) {
+        require (
+          _subString[_leaves[i + 1] == 0x34 ||
+          _subString[_leaves[i + rows] == 0x34,
+          "you must have one ship that is two squares long" 
+        )
+        longShipsVerfied++;
+      }
+      if (longShipsVerfied == 3) {
+        break;
+      }
+    }
+
+    //compute the merkle root and check that it matches in state
+      //hash 
+      //sort (possible options: //https://github.com/pipermerriam/ethereum-grove/tree/master/contracts, https://github.com/alice-si/array-booster/tree/master/contracts)
+      //tree 
+
+    //update game state 
+
+    //calculate prize
+    uint256 prize = games[_id].wager * 2;
+    //update winner balance
+    userBalance[g.winner] += prize;
+
+    emit LogWinner(_id, g.winner, "victory by hit count");
+  }
+
+  /*
+  *function to claim abandoned game in PendingVictory state 
+  */
+
+  function resolveUnclaimedVictory(uint32 _id) 
+    external
+    isPlayer(_id) 
+  {
+    require (now >= claimTimer[_id] + abandonThreshold, "the potential victor has 48h to validate their claim")
+    Game storage g = games[_id];
+
+    require (g.state = GameState.PendingVictory, "this game must be pending proof of honest play");
+    
+    //change winner
+    //calculate prize
+    uint256 prize = games[_id].wager * 2;
+    //update winner balance
+    userBalance[g.winner] += prize;
+  }
+  
 
   /*
   * this is the only function that transfers ETH out of the contract 
@@ -559,7 +669,7 @@ contract MerkleShip {
     view 
     returns(uint8) 
   {
-    require (_checkIfCoordinateIsValid(_x, _y) == true, "coordinate must be valid");
+    require (_checkIfCoordinateIsValid(_x, _y), "coordinate must be valid");
     //move starting index from 0 to 1 so multiplication works properly
     uint8 xShifted = _x + 1;
     uint8 yShifted = _y + 1;
@@ -577,7 +687,7 @@ contract MerkleShip {
   /*
   * helper function to return a substring
   */
-  function _strFirstChar(string _str) 
+  function _subString(string _str, uint256 _index) 
     internal 
     pure 
     returns(bytes1) 
@@ -585,13 +695,13 @@ contract MerkleShip {
     //convert to bytes to access substring index 
     bytes memory str = bytes(_str);
     //return first character
-    return str[0];
+    return str[_index];
   }
 
   /*
   * helper function to make sure no one xss attacks the front end
   */
-  function _checkString(string _str)
+  function _isValidString(string _str)
     public 
     pure
     returns(bool)
@@ -605,7 +715,7 @@ contract MerkleShip {
     for (uint256 i = 0; i < _length; i++) {
       require ( 
         // a-z lowercase && " "
-        (str[i] > 0x60 && str[i] < 0x7b) || (str[i] == 0x20),
+        (str[i] > 0x60 && str[i] < 0x7b) || str[i] == 0x20,
         "string contains invalid characters"
       );
     }
