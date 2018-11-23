@@ -1,23 +1,5 @@
-/*
-@dev
-TO ADD:
-- checks for potential winners submitting valid game state
-  - winners must provide merkle proofs for hitThreshold squares with a ship
-  - if they do not, the other player can claim the prize
-- checks for valid ship position
-- helper function to reconstruct game board from guesses
-- Q? do i have to keep initializing structs in sequential functions?
-- add another value in the leaf string that detmines ship type
-- update to 0.5.0
-
-12 ship squares
-one 4-long
-one 3-long
-one 2-long
-three 1-long
-*/
-
-pragma solidity ^0.4.25;
+pragma solidity ^0.5.0;
+pragma experimental ABIEncoderV2; //required for arguments with string arrays
 
 contract MerkleShip {
 
@@ -40,10 +22,10 @@ contract MerkleShip {
   mapping (uint32 => Game) public games;
   //ETH available for user withdrawal
   mapping (address => uint) public userBalance;
-  //separte timer to track PendingVictory claim time
+  //separte timer to track VictoryPending claim time
   mapping (uint32 => uint256) public claimTimer;
 
-  enum GameState { Ready, Cancelled, Active, Abandoned, PendingVictory, Complete }
+  enum GameState { Ready, Cancelled, Active, Abandoned, VictoryPending, VictoryChallenged, Complete }
   enum Turn { Inactive, PlayerA, PlayerB }
   enum GuessState { Unknown, Pending, Hit, Miss }
 
@@ -184,9 +166,14 @@ contract MerkleShip {
     bool verfied
   );
 
-  event LogPendingVictory(
+  event LogVictoryPending(
     uint256 indexed gameID,
     address indexed winner
+  );
+
+  event LogVictoryChallenged(
+    uint256 indexed gameID,
+    address indexed challenger
   );
 
   event LogWinner(
@@ -283,13 +270,13 @@ contract MerkleShip {
   */
   function guessAndReveal(
     uint32 _id, 
-    uint8[2] _square, 
+    uint8[2] memory _square, 
     bool _guess,
-    bytes32[] _proof, 
-    string _leafData,
-    string _smackTalk
+    bytes32[] memory _proof, 
+    string memory _leafData,
+    string memory _smackTalk
     ) 
-    external 
+    public 
     turnControl(_id) 
     isActive(_id) 
   {
@@ -335,7 +322,11 @@ contract MerkleShip {
   * can only be called as part of guess (no case of reveal without guess)
   * @dev: this function is too long. break up into modular code
   */
-  function _reveal(uint32 _id, bytes32[] _proof, string _leafData) 
+  function _reveal(
+    uint32 _id, 
+    bytes32[] memory _proof, 
+    string memory _leafData
+  ) 
     internal 
   {    
     //initialize game in storage
@@ -364,7 +355,7 @@ contract MerkleShip {
     }
     //check the first byte of the revealed data to confirm if there was a ship in that square
     bytes1 isHit = _subString(_leafData, 0);
-    require (isHit == 0x31 || isHit == 0x30, "leaf data must be in correct format")
+    require (isHit == 0x31 || isHit == 0x30, "leaf data must be in correct format");
     //update state if there was a hit
     //0x31 is 1 in bytes1
     if (isHit == 0x31) {
@@ -388,7 +379,7 @@ contract MerkleShip {
       }
     } 
 
-    _checkForVictoryByHit(uint32 _id);
+    _checkForVictoryByHit(_id);
 
     emit LogReveal(_id, msg.sender, true);
   }
@@ -404,18 +395,18 @@ contract MerkleShip {
     Game storage g = games[_id];
     //check for winner
     if (g.playerAhitCount == hitThreshold) {
-      g.state = GameState.PendingVictory;
+      g.state = GameState.VictoryPending;
       g.winner = games[_id].playerB;
     } 
     else if (g.playerBhitCount == hitThreshold) {
-      g.state = GameState.PendingVictory;
+      g.state = GameState.VictoryPending;
       g.winner = games[_id].playerA;
     } 
     //process winner
-    if (g.state == GameState.PendingVictory) {
+    if (g.state == GameState.VictoryPending) {
       claimTimer[_id] = now;
       
-      emit LogPendingVictory(_id, msg.sender);
+      emit LogVictoryPending(_id, msg.sender);
     }
   }
 
@@ -491,104 +482,112 @@ contract MerkleShip {
   }
 
   /*
+  *
+  */
+  function challengeVictory(uint32 _id)
+    external
+    isPlayer(_id)
+  {
+    Game storage g = games[_id];
+
+    require (g.state == GameState.VictoryPending, "this game must be pending proof of honest play");
+    require (msg.sender != g.winner);
+
+    claimTimer[_id] = now;
+    
+    g.state = GameState.VictoryChallenged;
+
+    emit LogVictoryChallenged(_id, msg.sender);
+  }
+
+  /*
   * in the case of a victory by hit, the winner must provide provide that had an honest game board
   * without this proof the winner could have submitted a board with no ships, for example
   * if the winner cannot prove their honest play, the other wins the prize
-  * @dev: the gas costs of this function are going to be crazy, research a better way to handle this case
+  * @dev: the gas costs of this function are going to be crazy, research a better way to handle this case (on the order of 1 million)
+  * @dev: perhaps this is challenge only?
   */
-  function claimPrize(uint32 _id, string[64] _leaves) 
-    external
+  function answerChallenge(uint32 _id, string[64] memory _leaves) 
+    public
     isPlayer(_id) 
   {
     //initialize struct in storage 
     Game storage g = games[_id];
 
-    require (g.state = GameState.PendingVictory, "this game must be pending proof of honest play");
-
-    //check that hitThreshold number of squares start with 1
-    uint256 shipCount;
-    for (uint256 i = 0; i < 64; i++) {
-      if (_subString(_leaves[i], 0) == 0x31) {
-        shipCount++;
-        if (shipCount == hitThreshold) {
-          break;
-        }
-      }
+    bytes32 root;
+    if (msg.sender == games[_id].playerA) {
+      root = g.playerAMerkleRoot;
+    } 
+    else if (msg.sender == games[_id].playerB) {
+      root = g.playerBMerkleRoot;
     }
 
-    require (shipCount == hitThreshold, "you must have set the correct number of ship squares");
-
-    //confirm that each ship more than one square long has the correct adjacencies
-    uint256 longShipsVerfied;
-    for (i = 0; i < 64; i++) {
-      if (_subString[_leaves[i], 3] == 0x34) {
-        require (
-          _subString[_leaves[i + 1] == 0x34 &&
-          _subString[_leaves[i + 2] == 0x34 &&
-          _subString[_leaves[i + 3] == 0x34 ||
-          _subString[_leaves[i + rows] == 0x34 &&
-          _subString[_leaves[i + 2 * rows] == 0x34 &&
-          _subString[_leaves[i + 3 * rows] == 0x34,
-          "you must have one ship that is four squares long" 
-        )
-        longShipsVerfied++;
-      }
-      if (_subString[_leaves[i], 3] == 0x33) {
-        require (
-          _subString[_leaves[i + 1] == 0x34 &&
-          _subString[_leaves[i + 2] == 0x34 ||
-          _subString[_leaves[i + rows] == 0x34 &&
-          _subString[_leaves[i + 2 * rows] == 0x34,
-          "you must have one ship that is three squares long" 
-        )
-        longShipsVerfied++;
-      }
-      if (_subString[_leaves[i], 3] == 0x32) {
-        require (
-          _subString[_leaves[i + 1] == 0x34 ||
-          _subString[_leaves[i + rows] == 0x34,
-          "you must have one ship that is two squares long" 
-        )
-        longShipsVerfied++;
-      }
-      if (longShipsVerfied == 3) {
-        break;
-      }
-    }
-
-    //compute the merkle root and check that it matches in state
-      //hash 
-      //sort (possible options: //https://github.com/pipermerriam/ethereum-grove/tree/master/contracts, https://github.com/alice-si/array-booster/tree/master/contracts)
-      //tree 
+    require (g.state == GameState.VictoryChallenged, "this game must be pending proof of honest play");
+    require (_checkShipCount(_leaves) == true, "you must have set the correct number of ship squares");
+    require (_checkShipLength(_leaves) == true, "you must have set the correct number of multi-square ships");
+    require (_computeMerkle(_hash(_leaves)) == root, "the merkle root must match");
 
     //update game state 
-
+    g.state = GameState.Complete;
     //calculate prize
     uint256 prize = games[_id].wager * 2;
     //update winner balance
     userBalance[g.winner] += prize;
 
-    emit LogWinner(_id, g.winner, "victory by hit count");
+    emit LogWinner(_id, g.winner, "verified victory by hit count");
   }
 
   /*
-  *function to claim abandoned game in PendingVictory state 
+  *function to claim abandoned game in VictoryPending state 
   */
-
   function resolveUnclaimedVictory(uint32 _id) 
     external
     isPlayer(_id) 
-  {
-    require (now >= claimTimer[_id] + abandonThreshold, "the potential victor has 48h to validate their claim")
+  { 
     Game storage g = games[_id];
 
-    require (g.state = GameState.PendingVictory, "this game must be pending proof of honest play");
+    require (now >= claimTimer[_id] + abandonThreshold, "the potential victor has 48h to validate their claim");
+    require (g.state == GameState.VictoryPending, "this game must be pending proof of honest play");
     
-    //change winner
+    //change game state
+    g.state = GameState.Complete;
     //calculate prize
     uint256 prize = games[_id].wager * 2;
     //update winner balance
     userBalance[g.winner] += prize;
+
+    emit LogWinner(_id, g.winner, "victory by unchallenged hit count")
+  }
+
+  /*
+  *function to claim unproven challenge in VictoryChallenged state 
+  *will also be able to be called if victor cannot provide valid proof of honest game
+  */
+  function resolveUnansweredChallenge(uint32 _id) 
+    external
+    isPlayer(_id) 
+  { 
+    Game storage g = games[_id];
+
+    require (now >= claimTimer[_id] + abandonThreshold, "the potential victor has 48h to validate their claim");
+    require (g.state == GameState.VictoryChallenged, "this game must be in VictoryChallenged state");
+
+    //change victor 
+    if (g.winner == games[_id].playerA) {
+      g.winner = games[_id].playerB;
+    } 
+    else if (g.winner == games[_id].playerB) {
+      g.winner = games[_id].playerA;
+    } 
+
+    //change game state
+    g.state = GameState.Complete;
+    //calculate prize
+    uint256 prize = games[_id].wager * 2;
+    //update winner balance
+    userBalance[g.winner] += prize;
+
+    emit LogWinner(_id, g.winner, "victory by unanswered challenge")
   }
   
 
@@ -611,16 +610,170 @@ contract MerkleShip {
   }
 
 
-  //////////////////
-  //VIEW FUNCTIONS//
-  //////////////////
-
-  //@dev add helper functions to rebuild visible game board from guesses 
-
-
   /////////////
   //UTILITIES//
   /////////////
+
+  /*
+  *confirm that the winner set the correct number of ships
+  *takes ~150,000 gas
+  */
+  function _checkShipCount(string[64] memory _leaves) 
+    returns(bool)
+  {
+    uint256 shipCount;
+
+    for (uint256 i = 0; i < 64; i++) {
+      if (_subString(_leaves[i], 0) == 0x31) {
+        shipCount++;
+        if (shipCount == hitThreshold) {
+          return true;
+        }
+      }
+    }
+  }
+
+  /*
+  *confirm that the winner set the correct length of ships
+  *takes ~230,000 gas
+  */
+  function _checkShipLength(string[64] memory _leaves) 
+    returns(bool)
+  {
+    uint256 longShipsVerfied;
+
+    for (uint256 i = 0; i < 64; i++) {
+      bytes1 shipLength = _subString(_leaves[i], 3);
+      bool fourFound;
+      bool threeFound;
+      bool twoFound;
+
+      if (shipLength == 0x34 && fourFound == false) {
+        require (
+          _subString(_leaves[i + 1], 3) == 0x34 &&
+          _subString(_leaves[i + 2], 3) == 0x34 &&
+          _subString(_leaves[i + 3], 3) == 0x34 ||
+          _subString(_leaves[i + rows], 3) == 0x34 &&
+          _subString(_leaves[i + 2 * rows], 3) == 0x34 &&
+          _subString(_leaves[i + 3 * rows], 3) == 0x34,
+          "you must have one ship that is four squares long" 
+        );
+        longShipsVerfied++;
+        fourFound = true;
+      }
+
+      if (shipLength == 0x33 && threeFound == false) {
+        require (
+          _subString(_leaves[i + 1], 3) == 0x33 &&
+          _subString(_leaves[i + 2], 3) == 0x33 ||
+          _subString(_leaves[i + rows], 3) == 0x33 &&
+          _subString(_leaves[i + 2 * rows], 3) == 0x33,
+          "you must have one ship that is three squares long" 
+        );
+        longShipsVerfied++;
+        threeFound = true;
+      }
+
+      if (shipLength == 0x32 && twoFound == false) {
+        require (
+          _subString(_leaves[i + 1], 3) == 0x32 ||
+          _subString(_leaves[i + rows], 3) == 0x32,
+          "you must have one ship that is two squares long" 
+        );
+        longShipsVerfied++;
+        twoFound = true;
+      }
+
+      if (longShipsVerfied == 3) {
+        return true;
+      }
+    }
+  }
+
+  /*
+  *hash each leaf
+  *takes ~150,000 gas
+  */
+  function _hash(string[] memory data) 
+    internal 
+    pure 
+  {
+    bytes32[] memory temp = new bytes32[](64);
+       for (uint i = 0; i < data.length; i++) {
+           temp[i] = keccak256(abi.encodePacked(data[i]));
+       }
+
+    _sort(temp);
+  } 
+
+  /*
+  *sort the array of hashed leaves
+  *takes ~150,000 gas
+  */ 
+  function _sort(bytes32[] memory data) 
+    internal 
+    pure 
+    returns(bytes32[] memory) 
+  {
+    _quickSort(data, int(0), int(data.length - 1));
+    return data;
+  }
+  
+  /*
+  *helper function for sorting
+  */
+  function _quickSort(bytes32[] memory arr, int left, int right) 
+    internal 
+    pure 
+  {
+    int i = left;
+    int j = right;
+    if(i==j) return;
+    bytes32 pivot = arr[uint(left + (right - left) / 2)];
+    while (i <= j) {
+      while (arr[uint(i)] < pivot) i++;
+      while (pivot < arr[uint(j)]) j--;
+      if (i <= j) {
+        (arr[uint(i)], arr[uint(j)]) = (arr[uint(j)], arr[uint(i)]);
+        i++;
+        j--;
+      }
+    }
+    if (left < j)
+      _quickSort(arr, left, j);
+    if (i < right)
+      _quickSort(arr, i, right);
+  }
+
+  /*
+  *recompute the merkle root from the sorted leaves
+  *takes ~190,000 gas
+  */
+  function _computeMerkle(bytes32[] memory data) 
+    internal 
+    pure 
+    returns(bytes32) 
+  {
+    require (data.length % 2 == 0, "even sets only");
+
+    if (data.length >= 2) {
+      bytes32[] memory newData = new bytes32[](data.length / 2);
+      uint256 j = 0;
+      for (uint256 i = 0; i < data.length; i+=2) {
+        newData[j] = keccak256(abi.encodePacked(data[i], data[i+1]));
+        j++;
+      }
+      if (newData.length > 2) {
+        return computeMerkle(newData);
+      }
+      else if (newData.length == 2) {
+        return keccak256(abi.encodePacked(newData[0], newData[1]));
+      }
+    } 
+    else if (data.length == 2) {
+      return keccak256(abi.encodePacked(data[0], data[1]));
+    }
+  }
   
   /*
   * verifies provided merkle proof against logged merkle roots
@@ -628,7 +781,11 @@ contract MerkleShip {
   * requires leafList.length % 2 == 0 (eg 64 leaves)
   * leaf data provided a single concatenated string of (isShip bool value, x coordinate, y coordinate, salt)
   */
-  function _verifyMerkleProof(bytes32[] _proof, bytes32 _root, string _leafData) 
+  function _verifyMerkleProof(
+    bytes32[] memory _proof, 
+    bytes32 _root, 
+    string memory _leafData
+  ) 
     internal 
     pure 
     returns(bool) 
@@ -687,7 +844,7 @@ contract MerkleShip {
   /*
   * helper function to return a substring
   */
-  function _subString(string _str, uint256 _index) 
+  function _subString(string memory _str, uint256 _index) 
     internal 
     pure 
     returns(bytes1) 
@@ -701,8 +858,8 @@ contract MerkleShip {
   /*
   * helper function to make sure no one xss attacks the front end
   */
-  function _isValidString(string _str)
-    public 
+  function _isValidString(string memory _str)
+    internal 
     pure
     returns(bool)
   { 
