@@ -9,19 +9,19 @@ MerkleShip is an implementation of the classic boardgame Battleship on Ethereum.
 1) Game Rules	
 2) Design Considerations	
 3) Gameplay
-	3A) set up
-	3B) active-game
-	3C) post-game
+3A) set up
+3B) active-game
+3C) post-game
 4) Features
-	4A) wagering
-	4B) time
-	4C) smack talk
+4A) wagering
+4B) time
+4C) smack talk
 5) Security Considerations
 6) Gas Considerations
 7) User Interface
 8) User Stories
 
-### GAME RULES
+### 1) GAME RULES
 
 Battleship (link wikipedia) is a two-player limited knowledge board game. Each player has a ruled coordinate grid on which they place a collection of ships of varying legnths. The location and orientation of these ships is hidden from the other player. The players take turns guessing the location of the other player's ships. If there is a ship in the coordinate guessed, it's a hit. If not, it's a miss. Ships sink when the oppossing player has hit every square along a ship's length. The objective of game is to be the first player to sink all of the other player's ships.
 
