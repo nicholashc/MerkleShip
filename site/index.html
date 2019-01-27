@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title></title>
+	<style type="text/css">
+		#mainBoard
+		{	
+		    width:416px;
+		    height:416px;
+		    margin:50px;
+		    border:1px solid black;
+		    background-color: white;
+		    float:left;
+		}
+		#altBoard
+		{	
+		    width:416px;
+		    height:416px;
+		    margin:50px;
+		    border:1px solid black;
+		    background-color: white;
+		    float:right;
+		}
+		.square
+		{
+		 	width:50px;
+		 	height:50px;
+		 	border:1px solid black;
+		 	background-color: white;
+		 	text-align:center;
+		 	font:29pt arial;
+		 	font-weight: lighter;
+		 	display: inline-block;
+		 	float:left;
+		}
+		#frame
+		{
+			width: 1050px;
+			margin: 0 auto;
+		}
+	</style>
+</head>
+<body>
+	<div id="frame">
+		<div id="mainBoard" class="listener">
+		</div>
+		<div id="altBoard" class="listener">
+		</div>
+	<div>
+	<script type="text/javascript">
+		for (var i=0; i< 64; i++){
+    		var newDiv = document.createElement("div");
+    		newDiv.id = "main" + i;
+    		newDiv.className = "square";
+    		document.getElementById("mainBoard")
+    			.appendChild(newDiv)
+    			.addEventListener("click", changeColor);
+		}
+		for (var i=0; i< 64; i++){
+			var newDiv = document.createElement("div");
+    		newDiv.id = "alt" + i;
+    		newDiv.className = "square";
+    		document.getElementById("altBoard")
+    			.appendChild(newDiv)
+    			.addEventListener("click", guess);
+		}
+		function changeColor() {
+			if (this.style.backgroundColor != "orange") {
+		    	this.style.backgroundColor = "orange";
+		    } else {
+		    	this.style.backgroundColor = "white";
+		    }
+		    return false;
+		}
+		function guess() {
+			if (this.innerHTML != "x") {
+		    	this.innerHTML = "x";
+		    } else {
+		    	this.innerHTML = "";
+		    }
+		    return false;
+		}
+	</script>
+</body>
+</html>
