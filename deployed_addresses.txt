@@ -1,0 +1,3 @@
+Deployed to Kovan at the following address: TBD
+
+Get Kovan ETH at https://github.com/kovan-testnet/faucet or ping me on Ryver.
