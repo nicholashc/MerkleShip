@@ -240,7 +240,7 @@ contract MerkleShip {
    * @dev can only be called once and cannot be reversed
    * @param _message optional message to explain stoppage
    */
-  function emergencyStop(string _message) 
+  function emergencyStop(string calldata _message) 
     external
     onlyAdmin()
     notEmergency()
@@ -906,7 +906,7 @@ contract MerkleShip {
   
   /** @dev helper function for sorting merkle tree leaves
    * @dev based on https://gist.github.com/subhodi/b3b86cc13ad2636420963e692a4d896f
-   * @param _data hashed leaves
+   * @param _arr hashed leaves
    * @param _left initial left-most array index
    * @param _right initial right-most array index
    * @return array of sorted leaves
