@@ -26,13 +26,13 @@ contract MerkleShip {
   uint8 public rows = 8;
   /** board height */
   uint8 public columns = 8;
-  /** sucessful hits required for victory */
+  /** successful hits required for victory */
   uint8 public hitThreshold = 12;
   /** storage of game state by id */
   mapping (uint32 => Game) public games;
   /** ETH available for user withdrawal */
   mapping (address => uint256) public userBalance;
-  /** separte timer to track VictoryPending claim time */
+  /** separate timer to track VictoryPending claim time */
   mapping (uint32 => uint256) public claimTimer;
 
   /** eight possible game states */
@@ -53,7 +53,7 @@ contract MerkleShip {
     /** wager from one player (total prize is wager * 2) */
     /** cannot overflow as max uint96 is larger than total ETH supply unless vitalik goes wild */
     uint96 wager; 
-    /** player whoe proposed the game */
+    /** player who proposed the game */
     address payable playerA;
     /** player who accepted the game */
     address payable playerB;
@@ -75,9 +75,9 @@ contract MerkleShip {
     mapping (uint8 => GuessState) playerAguesses;  
     /** index of player B guess states */
     mapping (uint8 => GuessState) playerBguesses;  
-    /** tracks square index of player A guesses; length property used to retreive most recent guess */
+    /** tracks square index of player A guesses; length property used to retrieve most recent guess */
     uint8[] playerAsquaresGuessed; 
-    /** tracks square index of player B guesses; length property used to retreive most recent guess */
+    /** tracks square index of player B guesses; length property used to retrieve most recent guess */
     uint8[] playerBsquaresGuessed; 
   }
 
@@ -103,7 +103,7 @@ contract MerkleShip {
     _; 
   }
 
-  /** @dev limits enagement to active games
+  /** @dev limits engagement to active games
    * @param _id Game ID
    */
   modifier isActive(uint32 _id) { 
@@ -113,7 +113,7 @@ contract MerkleShip {
     _;
   }
   
-  /** @dev limits enagement to games that have been proposed but are not yet active
+  /** @dev limits engagement to games that have been proposed but are not yet active
    * @param _id Game ID
    */
   modifier isReady(uint32 _id) { 
@@ -134,7 +134,7 @@ contract MerkleShip {
     _;
   }
 
-  /** @dev circut-breaker that blocks most functionality during an emergency
+  /** @dev circuit-breaker that blocks most functionality during an emergency
    */
   modifier notEmergency() { 
     require (isStopped == false,
@@ -333,7 +333,7 @@ contract MerkleShip {
    * @param _id game id
    * @param _square x,y coordinates of guess
    * @param _proof merkle proof which consists of six hashes 
-   * @param _leafData unhashed leaf being revealed (concatendated string in specificed format)
+   * @param _leafData unhashed leaf being revealed (concatenated string in specified format)
    * @param _smackTalk optional message to other player
    */
   function guessAndReveal(
@@ -386,7 +386,7 @@ contract MerkleShip {
   /** @dev validate and reveal the previous guess
    * @param _id game id
    * @param _proof merkle proof with six hashes 
-   * @param _leafData unhashed leaf being revealed (concatendated string in specificed format)
+   * @param _leafData unhashed leaf being revealed (concatenated string in specified format)
    */
   function _reveal(
     uint32 _id, 
@@ -411,7 +411,7 @@ contract MerkleShip {
       _verifyMerkleProof(_proof, root, _leafData) == true, 
       "you must provide a valid Merkle Proof"
     );
-    /** retreive index of square about to be revealed */
+    /** retrieve index of square about to be revealed */
     uint8 guessToReveal;
     if (msg.sender == games[_id].playerA) {
       guessToReveal = uint8(g.playerBsquaresGuessed[g.playerBsquaresGuessed.length.sub(1)]);
@@ -437,7 +437,7 @@ contract MerkleShip {
       }
     } 
     /** update state if there was a miss */
-    /** 0x30 is the chartacter "0" in bytes1 */
+    /** 0x30 is the character "0" in bytes1 */
     else if (isHit == 0x30) {
       hit = false;
       if (msg.sender == games[_id].playerA) {
@@ -453,7 +453,7 @@ contract MerkleShip {
     emit LogReveal(_id, msg.sender, true, guessToReveal, hit);
   }
 
-  /** @dev check if a victory by hit was acheived
+  /** @dev check if a victory by hit was achieved
    * @param _id game id
    */
   function _checkForVictoryByHit(uint32 _id) 
@@ -516,7 +516,7 @@ contract MerkleShip {
 
   /** @dev either player can call this function to concede
    * @dev the loser recovers 20% of their wager, incentivizing quick resolution of games
-   * @param _id gsme id
+   * @param _id game id
    */
   function concedeGame(uint32 _id) 
     external 
@@ -539,9 +539,9 @@ contract MerkleShip {
     /** update game state */
     g.state = GameState.Complete;
     g.winner = winner;
-    /** calcuate winner prize (90% of pot) */
+    /** calculate winner prize (90% of pot) */
     uint256 prize = (g.wager.mul(180)).div(100);
-    /** calcuate loser prize (10% of pot) */
+    /** calculate loser prize (10% of pot) */
     uint256 concession = g.wager.mul(2).sub(prize);
     /** zero out wager */
     g.wager = 0;
@@ -549,7 +549,7 @@ contract MerkleShip {
     userBalance[winner] += prize;
     userBalance[loser] += concession;
 
-    emit LogWinner(_id, g.winner, "victory by consession");
+    emit LogWinner(_id, g.winner, "victory by concession");
   }
 
   /** @dev players can challenge pending victories, requiring full validation of starting game state
@@ -629,7 +629,7 @@ contract MerkleShip {
     userBalance[g.winner] += prize;
 
     /** offset gas cost of this process by zeroing out as much storage as possible */
-    /** this takes advantage of gas refunds gained from setting non-zero sotrage values to zero */
+    /** this takes advantage of gas refunds gained from setting non-zero storage values to zero */
     /** only valid winners can use this to offset gas costs */
     _zeroOutStorage(_id);
 
@@ -658,11 +658,11 @@ contract MerkleShip {
     delete g.playerAMerkleRoot;
     delete g.playerBMerkleRoot;
     for (uint8 i = 0; i < g.playerAsquaresGuessed.length; i++) {
-      /** loop required to delete individiual mapping keys */
+      /** loop required to delete individual mapping keys */
       delete g.playerAguesses[i]; 
     }
     for (uint8 i = 0; i < g.playerBsquaresGuessed.length; i++) {
-      /** loop required to delete individiual mapping keys */
+      /** loop required to delete individual mapping keys */
       delete g.playerBguesses[i]; 
     } 
     delete g.playerAsquaresGuessed; 
@@ -874,8 +874,8 @@ contract MerkleShip {
     }
   }
 
-  /** @dev helper function for recomputing Merkle Tree
-   * @param _data unhashed leaves from intitial game state
+  /** @dev helper function for recomputing merkle tree
+   * @param _data unhashed leaves from initial game state
    * @return array of hashed leaves
    */
   function _hashEach(string[64] memory _data) 
@@ -891,7 +891,7 @@ contract MerkleShip {
     return arr;
   } 
 
-  /** @dev helper function for sorting Merkle Tree leaves
+  /** @dev helper function for sorting merkle tree leaves
    * @param _data hashed leaves
    * @return array of sorted leaves
    */
@@ -904,7 +904,7 @@ contract MerkleShip {
     return _data;
   }
   
-  /** @dev helper function for sorting Merkle Tree leaves
+  /** @dev helper function for sorting merkle tree leaves
    * @dev based on https://gist.github.com/subhodi/b3b86cc13ad2636420963e692a4d896f
    * @param _data hashed leaves
    * @param _left initial left-most array index
