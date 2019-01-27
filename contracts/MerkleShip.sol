@@ -5,7 +5,7 @@ pragma experimental ABIEncoderV2;
 
 import "../contracts/SafeMath.sol";
 
-/** @title MerkleShip */
+/** @title MerkleShip: Trustless Battleship on Ethereum */
 contract MerkleShip {
 
   using SafeMath for *;
