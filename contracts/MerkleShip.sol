@@ -1,79 +1,94 @@
-pragma solidity ^0.5.1;
-pragma experimental ABIEncoderV2; //required for arguments with string arrays
+pragma solidity ^0.5.0;
+/** ABIEncoderV2 required for arguments with string arrays */
+/** ignore compiler warnings about this feature (yolo) */
+pragma experimental ABIEncoderV2; 
 
+import "../contracts/SafeMath.sol";
+
+/** @title MerkleShip */
 contract MerkleShip {
+
+  using SafeMath for *;
 
   ///////////////////
   //STATE VARIABLES//
   ///////////////////
 
-  //global count 
+  /** toggle for emergency circuit */
+  bool public isStopped = false;
+  /** admin address; cannot receive any ether */
+  address public admin;
+  /** global game id count */
   uint32 public gameCount;
-  //max turn length before a game is considered abandoned 
+  /** max turn length before a game is considered abandoned */ 
   uint32  public abandonThreshold = 48 hours;
-  //board width
+  /** board width */
   uint8 public rows = 8;
-  //board height
+  /** board height */
   uint8 public columns = 8;
-  //sucessful hits required for victory
+  /** sucessful hits required for victory */
   uint8 public hitThreshold = 12;
-  //storage of game state by index
+  /** storage of game state by id */
   mapping (uint32 => Game) public games;
-  //ETH available for user withdrawal
+  /** ETH available for user withdrawal */
   mapping (address => uint256) public userBalance;
-  //separte timer to track VictoryPending claim time
+  /** separte timer to track VictoryPending claim time */
   mapping (uint32 => uint256) public claimTimer;
 
+  /** eight possible game states */
   enum GameState { Ready, Cancelled, Active, Abandoned, VictoryPending, VictoryChallenged, Complete, Zeroed }
+  /** three possible turn states */
   enum Turn { Inactive, PlayerA, PlayerB }
+  /** four possible guess states */
   enum GuessState { Unknown, Pending, Hit, Miss }
 
+  /** @dev primary storage of game state
+   * @dev the variables up to playerAMerkleRoot maximize storage by packing tightly into three 256-bit words 
+   */
   struct Game {
-    //global gameCount; will overflow if there are more than 4,294,967,295 games 
+    /** global gameCount; will overflow if there are more than 4,294,967,295 games  */
     uint32 id; 
-    //turn start time; reset at start of each term; will overflow February 7, 2106
+    /** turn start time; reset at start of each turn; will overflow February 7, 2106 */
     uint32 turnStartTime; 
-    //wager from one player (total prize is wager * 2)
-    //cannot overflow as max uint96 is larger than total ETH supply
+    /** wager from one player (total prize is wager * 2) */
+    /** cannot overflow as max uint96 is larger than total ETH supply unless vitalik goes wild */
     uint96 wager; 
-    //player that proposed the game
-    address playerA;
-    //player that accepted the game
-    address playerB;
-    //winner only set on game resolution
-    address winner;
-    //tracks number of hits on player A's board
+    /** player whoe proposed the game */
+    address payable playerA;
+    /** player who accepted the game */
+    address payable playerB;
+    /** winner only set on game resolution */
+    address payable winner;
+    /** tracks number of hits on player A's board */
     uint8 playerAhitCount;
-    //tracks number of hits on player B's board
+    /** tracks number of hits on player B's board */
     uint8 playerBhitCount;
-    //game state; takes 8 bits of storage
+    /** game state; takes 8 bits of storage */
     GameState state; 
-    //turn state; takes 8 bits of storage
+    /** turn state; takes 8 bits of storage */
     Turn turn; 
-    //note: the above packs tightly into three 256-bit words
-    //merkle root of playerA secret game board
+    /** merkle root of playerA secret game board */
     bytes32 playerAMerkleRoot;
-    //merkle root of playerB secret game board
+    /** merkle root of playerB secret game board */
     bytes32 playerBMerkleRoot;
-    //index of player A guess states
+    /** index of player A guess states */
     mapping (uint8 => GuessState) playerAguesses;  
-    //index of player B guess states
+    /** index of player B guess states */
     mapping (uint8 => GuessState) playerBguesses;  
-    //tracks square index of player A guesses; length property used to retreive most recent guess
+    /** tracks square index of player A guesses; length property used to retreive most recent guess */
     uint8[] playerAsquaresGuessed; 
-    //tracks square index of player B guesses; length property used to retreive most recent guess 
+    /** tracks square index of player B guesses; length property used to retreive most recent guess */
     uint8[] playerBsquaresGuessed; 
   }
-
 
   /////////////
   //MODIFIERS//
   /////////////
 
-  /*
-  * controls whether it is the correct turn of the player attempting to call a game function
-  * blocks players who are not part of the game
-  */
+  /** @dev controls whether it is the correct turn of the player attempting to call a game function
+   * @dev blocks players who are not part of the game
+   * @param _id Game ID
+   */
   modifier turnControl(uint32 _id) { 
     if (games[_id].turn == Turn.PlayerA) {
       require (
@@ -88,9 +103,9 @@ contract MerkleShip {
     _; 
   }
 
-  /*
-  * limits enagement to active games
-  */
+  /** @dev limits enagement to active games
+   * @param _id Game ID
+   */
   modifier isActive(uint32 _id) { 
     require (
       games[_id].state == GameState.Active,
@@ -98,9 +113,9 @@ contract MerkleShip {
     _;
   }
   
-  /*
-  * limits enagement to games that have been proposed but are not yet active
-  */
+  /** @dev limits enagement to games that have been proposed but are not yet active
+   * @param _id Game ID
+   */
   modifier isReady(uint32 _id) { 
     require (
       games[_id].state == GameState.Ready,
@@ -108,10 +123,10 @@ contract MerkleShip {
     _;
   }
 
-  /*
-  * blocks players who are not part of the game
-  * turn agnostic
-  */
+  /** @dev blocks players who are not part of the game
+   * @dev turn agnostic
+   * @param _id Game ID
+   */
   modifier isPlayer(uint32 _id) { 
     require (
       msg.sender == games[_id].playerA || msg.sender == games[_id].playerB,
@@ -119,6 +134,37 @@ contract MerkleShip {
     _;
   }
 
+  /** @dev circut-breaker that blocks most functionality during an emergency
+   */
+  modifier notEmergency() { 
+    require (isStopped == false,
+    "you can only use this function in a non-emergency"); 
+    _; 
+  }
+
+  /** @dev restricts functions that can only be used in an emergency
+   */
+  modifier onlyEmergency() { 
+    require (isStopped == true,
+    "you can only use this function in an emergency"); 
+    _; 
+  }
+  
+  /** @dev restricts functions that can accessed by the admin
+   */
+  modifier onlyAdmin() { 
+    require (msg.sender == admin,
+    "you must be the admin"); 
+    _; 
+  }
+
+  ///////////////
+  //CONSTRUCTOR//
+  ///////////////
+
+  constructor() public {
+    admin = msg.sender;
+  }
 
   //////////
   //EVENTS//
@@ -155,14 +201,15 @@ contract MerkleShip {
   event LogGuess(
     uint256 indexed gameID,
     address indexed user,
-    uint256 square,
-    bool guess
+    uint256 square
   ); 
 
   event LogReveal(
     uint256 indexed gameID,
     address indexed user,
-    bool verfied
+    bool verfied,
+    uint256 square,
+    bool isHit
   );
 
   event LogVictoryPending(
@@ -181,29 +228,47 @@ contract MerkleShip {
     string message
   );
 
+  event LogEmergency(
+    string message
+  );
+
+  //////////////////
+  //ADMIN FUNCTION//
+  //////////////////
+
+  /** @dev emergency stop function to bring all games to safe halt 
+   * @dev can only be called once and cannot be reversed
+   * @param _message optional message to explain stoppage
+   */
+  function emergencyStop(string _message) 
+    external
+    onlyAdmin()
+    notEmergency()
+  {
+    isStopped = true;
+    emit LogEmergency(_message);
+  }
 
   //////////////////////
   //PRE-GAME FUNCTIONS//
   //////////////////////
 
-  /*
-  * propose a new game
-  * user must provide the merkle root of their secret game board
-  * merkle root computed offchain but validated on chain
-  * winners must provide proofs of a valid game board before they can claim their prize
-  * can submit a wager on the outcome of the game, which must be matched by the second player 
-  * 0 ETH is a valid wager
-  */
+  /**
+   * @dev propose a new game
+   * @param _wager amount in wei (0 is a valid amount)
+   * @param  _playerAMerkleRoot merkle root of initial game state
+   */
   function proposeGame(uint32 _wager, bytes32 _playerAMerkleRoot) 
     external 
     payable 
+    notEmergency()
   {
     require (msg.value == _wager, "you must send the right amount");
-    //increment gameCount; the first game is 1, not 0
+    /** increment gameCount; the first game is 1, not 0 */
     gameCount++;
-    //initialize struct in storage
+    /** initialize struct in storage */
     Game storage g = games[gameCount];
-    //save initial game state
+    /** save initial game state */
     g.id = gameCount;
     g.wager = _wager;
     g.playerA = msg.sender;
@@ -213,20 +278,21 @@ contract MerkleShip {
     emit LogProposedGame(gameCount, msg.sender, msg.value);
   }
 
-  /*
-  * accept a propsed new game 
-  * must match playerA's wager
-  * starts the timer of playerA's fisrt turn
-  */
+  /**
+   * @dev accept a proposed game
+   * @param _id game id
+   * @param  _playerBMerkleRoot merkle root of initial game state
+   */
   function acceptGame(uint32 _id, bytes32 _playerBMerkleRoot) 
     external 
     payable 
     isReady(_id) 
+    notEmergency()
   {
     require (msg.value == games[_id].wager, "you must match the wager");
-    //initialize struct in storage
+    /** initialize struct from storage */
     Game storage g = games[_id];
-    //update game state
+    /** update game state */
     g.turnStartTime = uint32(now);
     g.playerB = msg.sender;
     g.state = GameState.Active;
@@ -236,41 +302,43 @@ contract MerkleShip {
     emit LogGameAccepted(_id, msg.sender, msg.value);
   }
 
-  /*
-  * can be called by playerA is their proposed game has not yet been accepted 
-  */
+  /**
+   * @dev cancel a proposed game
+   * @param _id game id
+   */
   function cancelProposedGame(uint32 _id) 
     external 
     isReady(_id) 
+    notEmergency()
   {
     require (msg.sender == games[_id].playerA, "you must have proposed this game");
-    //local variable of balance to return
+    /** local variable of balance to return */
     uint256 balanceToReturn = games[_id].wager;
-    //initialize struct from storage
+    /** initialize struct from storage */
     Game storage g = games[_id];
-    //update state and set wager amount to 0
+    /** update state and set wager amount to 0 */
     g.state = GameState.Cancelled;
     g.wager = 0;
-    //update user balance
+    /** update user balance */
     userBalance[msg.sender] += balanceToReturn;
 
     emit LogGameCancelled(_id, msg.sender);
   }
 
-
   /////////////////////
   //IN-GAME FUNCTIONS//
   /////////////////////
 
-  /*
-  * user submits their guess
-  * user also provides a merkle proof that reveals whether or not the previous player's guess was a hit
-  * proof not provided on first turn
-  */
+  /** @dev submit a guess and reveal result of other player's previous guess
+   * @param _id game id
+   * @param _square x,y coordinates of guess
+   * @param _proof merkle proof which consists of six hashes 
+   * @param _leafData unhashed leaf being revealed (concatendated string in specificed format)
+   * @param _smackTalk optional message to other player
+   */
   function guessAndReveal(
     uint32 _id, 
     uint8[2] memory _square, 
-    bool _guess,
     bytes32[6] memory _proof, 
     string memory _leafData,
     string memory _smackTalk
@@ -278,31 +346,31 @@ contract MerkleShip {
     public 
     turnControl(_id) 
     isActive(_id) 
+    notEmergency()
   {
-    //@dev add length check for _leafData here?
     require (_isStringValid(_smackTalk) || bytes(_smackTalk).length == 0, "smack talk must be a valid string");
-    //convert coordinates to index 
-    //this function also checks that the coordinate are inbounds
+    /** convert coordinates to index */
+    /** this function also checks that the coordinate are inbounds */
     uint8 square = _coordinateToIndex(_square[0], _square[1]);
-    //initialize struct in storage
+    /** initialize struct from storage */
     Game storage g = games[_id];
-    //process reveal and update state with playerA guess
+    /** process reveal and update state with playerA guess */
     if (msg.sender == games[_id].playerA) {
-      //nothing to reveal on playerA's first turn 
+      /** nothing to reveal on playerA's first turn */
       if (g.playerBsquaresGuessed.length > 0) {
-        //reveal square from playerB's previous guess
+        /** reveal square from playerB's previous guess */
         _reveal(_id, _proof, _leafData);
       }
-      //guess coordinates stored in sequential array 
+      /** guess coordinates stored in sequential array */
       g.playerAsquaresGuessed.push(square);
-      //guess state pending until revealed 
+      /** guess state pending until revealed */
       g.playerAguesses[uint8(g.playerBsquaresGuessed.length)] = GuessState.Pending;
-      //reset turn start time
+      /** reset turn start time */
       g.turnStartTime = uint32(now);
-      //update turn state 
+      /** update turn state  */
       g.turn = Turn.PlayerB;
     } 
-    //process reveal and update state with playerB guess
+    /** process reveal and update state with playerB guess */
     else if (msg.sender == games[_id].playerB) {
       _reveal(_id, _proof, _leafData);
       g.playerBsquaresGuessed.push(square);
@@ -311,15 +379,15 @@ contract MerkleShip {
       g.turn = Turn.PlayerA;
     }
 
-    emit LogGuess(_id, msg.sender, square, _guess);
+    emit LogGuess(_id, msg.sender, square);
     emit LogSmackTalk(_id, msg.sender, _smackTalk);
   } 
 
-  /*
-  * reveal component
-  * can only be called as part of guess (no case of reveal without guess)
-  * @dev: this function is too long. break up into modular code
-  */
+  /** @dev validate and reveal the previous guess
+   * @param _id game id
+   * @param _proof merkle proof with six hashes 
+   * @param _leafData unhashed leaf being revealed (concatendated string in specificed format)
+   */
   function _reveal(
     uint32 _id, 
     bytes32[6] memory _proof, 
@@ -327,9 +395,9 @@ contract MerkleShip {
   ) 
     internal 
   {    
-    //initialize game in storage
+    /** initialize game from storage */
     Game storage g = games[_id];
-    //retreive appropriate merkle root from game state 
+    /** retreive appropriate merkle root from game state  */
     bytes32 root;
     if (msg.sender == games[_id].playerA) {
       root = g.playerAMerkleRoot;
@@ -337,26 +405,28 @@ contract MerkleShip {
     else if (msg.sender == games[_id].playerB) {
       root = g.playerBMerkleRoot;
     }
-    //reveal and verify merkle proof from the other player's last guess
-    //if the player calling this function can't provide the verification they will not be able to advance their turn
+    /** reveal and verify merkle proof from the other player's last guess */
+    /** if the player calling this function can't provide the verification they will not be able to advance their turn */
     require (
       _verifyMerkleProof(_proof, root, _leafData) == true, 
       "you must provide a valid Merkle Proof"
     );
-    //retreive index of square about to be revealed 
+    /** retreive index of square about to be revealed */
     uint8 guessToReveal;
     if (msg.sender == games[_id].playerA) {
-      guessToReveal = uint8(g.playerBsquaresGuessed[g.playerBsquaresGuessed.length - 1]);
+      guessToReveal = uint8(g.playerBsquaresGuessed[g.playerBsquaresGuessed.length.sub(1)]);
     } 
     else if (msg.sender == games[_id].playerB) {
-      guessToReveal = uint8(g.playerAsquaresGuessed[g.playerAsquaresGuessed.length - 1]);
+      guessToReveal = uint8(g.playerAsquaresGuessed[g.playerAsquaresGuessed.length.sub(1)]);
     }
-    //check the first byte of the revealed data to confirm if there was a ship in that square
+    /** check the first byte of the revealed data to confirm if there was a ship in that square */
     bytes1 isHit = _subString(_leafData, 0);
     require (isHit == 0x31 || isHit == 0x30, "leaf data must be in correct format");
-    //update state if there was a hit
-    //0x31 is 1 in bytes1
+    /** update state if there was a hit */
+    bool hit;
+    /** 0x31 is the character "1" in bytes1 */
     if (isHit == 0x31) {
+      hit = true;
       if (msg.sender == games[_id].playerA) {
         g.playerBguesses[guessToReveal] = GuessState.Hit;
         g.playerBhitCount++;
@@ -366,9 +436,10 @@ contract MerkleShip {
         g.playerAhitCount++;
       }
     } 
-    //update state if there was a miss 
-    //0x30 is 0 in bytes1
+    /** update state if there was a miss */
+    /** 0x30 is the chartacter "0" in bytes1 */
     else if (isHit == 0x30) {
+      hit = false;
       if (msg.sender == games[_id].playerA) {
         g.playerBguesses[guessToReveal] = GuessState.Miss;
       } 
@@ -379,19 +450,18 @@ contract MerkleShip {
 
     _checkForVictoryByHit(_id);
 
-    emit LogReveal(_id, msg.sender, true);
+    emit LogReveal(_id, msg.sender, true, guessToReveal, hit);
   }
 
-  /*
-  * check if victory by hit has been achieved
-  * if yes, process victory
-  */
+  /** @dev check if a victory by hit was acheived
+   * @param _id game id
+   */
   function _checkForVictoryByHit(uint32 _id) 
     internal
   {
-    //initialize game in storage
+    /** initialize game from storage */
     Game storage g = games[_id];
-    //check for winner
+    /** check for winner */
     if (g.playerAhitCount == hitThreshold) {
       g.state = GameState.VictoryPending;
       g.winner = games[_id].playerB;
@@ -400,7 +470,7 @@ contract MerkleShip {
       g.state = GameState.VictoryPending;
       g.winner = games[_id].playerA;
     } 
-    //process winner
+    /** process winner */
     if (g.state == GameState.VictoryPending) {
       claimTimer[_id] = now;
       
@@ -408,83 +478,89 @@ contract MerkleShip {
     }
   }
 
-  /*
-  * can be called in case an game is abandonend
-  * a game is abandoned if any turn lasts longer than the abandonThreshold
-  * the player who did not abandon the game wins the full prize
-  */
+  /** @dev can be called to resolve a game abandoned by the other player
+   * @param _id game id
+   */
   function resolveAbandonedGame(uint32 _id) 
     external 
     isActive(_id)
     isPlayer(_id) 
+    notEmergency()
   {
     require (
       now >= games[_id].turnStartTime + abandonThreshold,
       "the game must be stale for at least 48 hours"
     ); 
 
-    //can only be called if it is NOT your turn
+    /** can only be called if it is NOT your turn */
     if (msg.sender == games[_id].playerA) {
       require (games[_id].turn == Turn.PlayerB, "it must be the other player's turn");
     } 
     else if (msg.sender == games[_id].playerB) {
       require (games[_id].turn == Turn.PlayerA, "it must be the other player's turn");
     }
-    //initialize struct in storage
+    /** initialize struct from storage */
     Game storage g = games[_id];
-    //update game state
+    /** update game state */
     g.state = GameState.Abandoned;
     g.winner = msg.sender;
-    //calcuate prize
-    uint prize = games[_id].wager * 2;
-    //update winner balance
+    /** calcuate prize */
+    uint prize = g.wager * 2;
+    /** zero out wager just in case */
+    g.wager = 0;
+    /** update winner balance */
     userBalance[msg.sender] += prize;
 
     emit LogWinner(_id, g.winner, "victory by abandonment");
   }
 
-  /*
-  * can be called by either player
-  * the loser recovers 20% of their wager 
-  * this incentivizes quick game resolution when the outcome seems certain
-  */
+  /** @dev either player can call this function to concede
+   * @dev the loser recovers 20% of their wager, incentivizing quick resolution of games
+   * @param _id gsme id
+   */
   function concedeGame(uint32 _id) 
     external 
     isActive(_id) 
     isPlayer(_id) 
+    notEmergency()
   { 
-    //assign loser status to player conceding
-    address loser = msg.sender;
-    //assign winner status to other player
-    address winner;
+    /** assign loser status to player conceding */
+    address payable loser = msg.sender;
+    /** assign winner status to other player */
+    address payable winner;
     if (msg.sender == games[_id].playerA) {
       winner = games[_id].playerB;
     } 
     else if (msg.sender == games[_id].playerB) {
       winner = games[_id].playerA;
     }
-    //initialize struct in storage
+    /** initialize struct in storage */
     Game storage g = games[_id];
-    //update game state 
+    /** update game state */
     g.state = GameState.Complete;
     g.winner = winner;
-    //calcuate winner prize (90% of pot)
-    uint256 prize = (games[_id].wager * 180) / 100;
-    //calcuate loser prize (10% of pot)
-    uint256 concession = games[_id].wager * 2 - prize;
-    //update user balances 
+    /** calcuate winner prize (90% of pot) */
+    uint256 prize = (g.wager.mul(180)).div(100);
+    /** calcuate loser prize (10% of pot) */
+    uint256 concession = g.wager.mul(2).sub(prize);
+    /** zero out wager */
+    g.wager = 0;
+    /** update user balances */
     userBalance[winner] += prize;
     userBalance[loser] += concession;
 
     emit LogWinner(_id, g.winner, "victory by consession");
   }
 
-  /*
-  *
-  */
+  /** @dev players can challenge pending victories, requiring full validation of starting game state
+   * @dev on-chain reconstruction and validation of the full proof is expensive and makes up ~30% of the code in this contract
+   * @dev this is all to handle to the single edge case of a player who computes a merkle root based on a dishonest initial game state
+   * @param _id game id
+   */
   function challengeVictory(uint32 _id)
     external
     isPlayer(_id)
+    notEmergency()
   {
     Game storage g = games[_id];
 
@@ -498,17 +574,18 @@ contract MerkleShip {
     emit LogVictoryChallenged(_id, msg.sender);
   }
 
-  /*
-  * in the case of a challended victory by hit, the winner must provide provide that they had an honest game board
-  * without this proof the winner could have submitted a board with no ships, for example
-  * if the winner cannot prove their honest play, the other player wins the prize
-  * @dev: the gas costs of this function are going to be crazy, research a better way to handle this case (on the order of 1 million)
-  */
+  /** @dev if challenge, the proposed victor must provide and validate a full proof of their starting game state
+   * @dev on-chain reconstruction and validation of the full proof is expensive and makes up ~30% of the code in this contract
+   * @dev this is all to handle to the single edge case of a player who computes a merkle root based on a dishonest initial game state
+   * @param _id game id
+   * @param _leafData full unhashed array of starting game state for on-chain validation
+   */
   function answerChallenge(uint32 _id, string[64] memory _leafData) 
     public
     isPlayer(_id) 
+    notEmergency()
   {
-    //initialize struct in storage 
+    /** initialize struct from storage */
     Game storage g = games[_id];
 
     require (
@@ -544,55 +621,61 @@ contract MerkleShip {
       "the merkle root must match"
     );
 
-    //calculate prize
-    uint256 prize = games[_id].wager * 2;
-    //update winner balance
+    /** calculate prize */
+    uint256 prize = g.wager * 2;
+    /** zero out wager */
+    g.wager = 0;
+    /** update winner balance */
     userBalance[g.winner] += prize;
 
-    //offset gas cost of this process by zeroing out as much storage as possible
-    //this takes advantage of gas refunds gained from setting non-zero sotrage values to zero
-    //only valid winners can use this to offset gas costs 
+    /** offset gas cost of this process by zeroing out as much storage as possible */
+    /** this takes advantage of gas refunds gained from setting non-zero sotrage values to zero */
+    /** only valid winners can use this to offset gas costs */
     _zeroOutStorage(_id);
 
     emit LogWinner(_id, g.winner, "verified victory by hit count");
   }
 
+  /** @dev helper function to reduce gas costs of full validation by earning storage refunds
+   * @param _id game id
+   */
   function _zeroOutStorage(uint32 _id)
     internal
   {
-    //initialize struct in storage 
+    /** initialize struct from storage */
     Game storage g = games[_id]; 
 
-    //g.id maintained for history
+    /** g.id maintained for history */
     delete g.turnStartTime;
     delete g.wager;
     delete g.playerA;
     delete g.playerB;
-    //g.winner maintained for history
+    /** g.winner maintained for history */
     delete g.playerAhitCount;
     delete g.playerBhitCount;
-    g.state = GameState.Zeroed; //updated for history
+    g.state = GameState.Zeroed;
     delete g.turn; 
     delete g.playerAMerkleRoot;
     delete g.playerBMerkleRoot;
     for (uint8 i = 0; i < g.playerAsquaresGuessed.length; i++) {
-      //loop required to delete individiaul mapping keys
+      /** loop required to delete individiual mapping keys */
       delete g.playerAguesses[i]; 
     }
     for (uint8 i = 0; i < g.playerBsquaresGuessed.length; i++) {
-      //loop required to delete individiaul mapping keys
+      /** loop required to delete individiual mapping keys */
       delete g.playerBguesses[i]; 
     } 
     delete g.playerAsquaresGuessed; 
     delete g.playerBsquaresGuessed; 
   }
 
-  /*
-  *function to claim abandoned game in VictoryPending state 
-  */
+  /** @dev function to claim abandoned game in VictoryPending state
+   * @param _id game id
+   */
   function resolveUnclaimedVictory(uint32 _id) 
     external
     isPlayer(_id) 
+    notEmergency()
   { 
     Game storage g = games[_id];
 
@@ -605,23 +688,25 @@ contract MerkleShip {
       "this game must be pending proof of honest play"
     );
     
-    //change game state
+    /** change game state */
     g.state = GameState.Complete;
-    //calculate prize
-    uint256 prize = games[_id].wager * 2;
-    //update winner balance
+    /** calculate prize */
+    uint256 prize = g.wager * 2;
+    /** zero out wager */
+    g.wager = 0;
+    /** update winner balance */
     userBalance[g.winner] += prize;
 
     emit LogWinner(_id, g.winner, "victory by unchallenged hit count");
   }
 
-  /*
-  *function to claim unproven challenge in VictoryChallenged state 
-  *will also be able to be called if victor cannot provide valid proof of honest game
-  */
+  /** @dev function to claim unproven challenge in VictoryChallenged state
+   * @param _id game id
+   */
   function resolveUnansweredChallenge(uint32 _id) 
     external
     isPlayer(_id) 
+    notEmergency()
   { 
     Game storage g = games[_id];
 
@@ -634,7 +719,7 @@ contract MerkleShip {
       "this game must be in VictoryChallenged state"
     );
 
-    //change victor 
+    /** change victor */
     if (g.winner == games[_id].playerA) {
       g.winner = games[_id].playerB;
     } 
@@ -642,44 +727,77 @@ contract MerkleShip {
       g.winner = games[_id].playerA;
     } 
 
-    //change game state
+    /** change game state */
     g.state = GameState.Complete;
-    //calculate prize
-    uint256 prize = games[_id].wager * 2;
-    //update winner balance
+    /** calculate prize */
+    uint256 prize = g.wager * 2;
+    /** zero out wager */
+    g.wager = 0;
+    /** update winner balance */
     userBalance[g.winner] += prize;
 
     emit LogWinner(_id, g.winner, "victory by unanswered challenge");
   }
   
-
-  /*
-  * this is the only function that transfers ETH out of the contract 
-  * requires safer pull pattern
-  */
+  /** @dev this function is only way ETH can leave the contract
+   */
   function withdraw() 
     external 
   {
     require (userBalance[msg.sender] > 0, "user must have a balance to withdraw");
-    //set balance as local variable
+    /** set balance as local variable */
     uint256 balance = userBalance[msg.sender];
-    //change state balance to 0
+    /** change state balance to 0 */
     userBalance[msg.sender] = 0;
-    //safely transfer without potential for reentrancy 
+    /** safely transfer without potential for reentrancy */
+    /** for smart contracts trying to change state in their fallback function or reverting transfers...don't ¯\_(ツ)_/¯ */
     msg.sender.transfer(balance);
 
     emit LogUserWithdraw(msg.sender, balance);
   }
 
+  /** @dev emergencyResolve credits wagers in any game state so users can withdraw
+   * @param _id game id
+   */
+  function emergencyResolve(uint32 _id)
+    external
+    onlyEmergency()
+    isPlayer(_id) 
+  {
+    Game storage g = games[_id];
+    
+    if (g.state == GameState.Ready) {
+      /** return staked funds */
+      g.state = GameState.Complete;
+      uint256 refund = g.wager;
+      g.wager = 0;
+      userBalance[g.playerA] += refund;
+    } else if (
+      g.state == GameState.Active || 
+      g.state == GameState.VictoryPending ||
+      g.state == GameState.VictoryChallenged
+    ) {
+      /** split funds */
+      g.state = GameState.Complete;
+      uint256 refund = g.wager;
+      g.wager = 0;
+      userBalance[g.playerA] += refund;
+      userBalance[g.playerB] += refund;
+    }
 
-  /////////////
-  //UTILITIES//
-  /////////////
+    emit LogWinner(_id, address(0), "game resolved in an emergency");  
+  }
 
-  /*
-  *confirm that the winner set the correct number of ships
-  *takes ~150,000 gas
-  */
+  //////////////////////////////
+  //VALIDATE VICTORY FUNCTIONS//
+  //////////////////////////////
+
+  /** @dev the functions in this section exist exclusively to valid the full game state in the rare event a victory is challenged */
+
+  /** @dev confirms whether the winner set the correct number of ships if their victory is challenged
+   * @param _data array of initial state
+   * @return true if condition met; false if not
+   */
   function _checkShipCount(string[64] memory _data) 
     internal
     view
@@ -697,10 +815,10 @@ contract MerkleShip {
     }
   }
 
-  /*
-  *confirm that the winner set the correct length of ships
-  *takes ~230,000 gas
-  */
+  /** @dev confirms whether the winner set the correct lengths of ships if their victory is challenged
+   * @param _data array of initial state
+   * @return true if condition met; false if not
+   */
   function _checkShipLength(string[64] memory _data) 
     internal
     view
@@ -756,10 +874,10 @@ contract MerkleShip {
     }
   }
 
-  /*
-  *hash each leaf
-  *takes ~150,000 gas
-  */
+  /** @dev helper function for recomputing Merkle Tree
+   * @param _data unhashed leaves from intitial game state
+   * @return array of hashed leaves
+   */
   function _hashEach(string[64] memory _data) 
     internal 
     pure 
@@ -773,24 +891,26 @@ contract MerkleShip {
     return arr;
   } 
 
-  /*
-  *sort the array of hashed leaves
-  *takes ~150,000 gas
-  */ 
+  /** @dev helper function for sorting Merkle Tree leaves
+   * @param _data hashed leaves
+   * @return array of sorted leaves
+   */
   function _sortArray(bytes32[] memory _data) 
     internal 
     pure 
     returns(bytes32[] memory) 
   {
-    _quickSort(_data, int(0), int(_data.length - 1));
+    _quickSort(_data, int(0), int(_data.length.sub(1)));
     return _data;
   }
   
-  /*
-  *helper function for sorting
-  *from https://gist.github.com/subhodi/b3b86cc13ad2636420963e692a4d896f
-  *O(nlogn)
-  */
+  /** @dev helper function for sorting Merkle Tree leaves
+   * @dev based on https://gist.github.com/subhodi/b3b86cc13ad2636420963e692a4d896f
+   * @param _data hashed leaves
+   * @param _left initial left-most array index
+   * @param _right initial right-most array index
+   * @return array of sorted leaves
+   */
   function _quickSort(bytes32[] memory _arr, int _left, int _right) 
     internal 
     pure 
@@ -814,16 +934,16 @@ contract MerkleShip {
       _quickSort(_arr, i, _right);
   }
 
-  /*
-  *recompute the merkle root from the sorted leaves
-  *takes ~190,000 gas
-  */
+  /** @dev recompute merkle tree
+   * @param _data sorted hashed leaves
+   * @return merkle root
+   */
   function _computeMerkleTree(bytes32[] memory _data) 
     internal 
     pure 
     returns(bytes32) 
   {
-    require (_data.length % 2 == 0, "even sets only");
+    require (_data.length.mod(2) == 0, "even sets only");
 
     if (_data.length >= 2) {
       bytes32[] memory newData = new bytes32[](_data.length / 2);
@@ -843,13 +963,19 @@ contract MerkleShip {
       return keccak256(abi.encodePacked(_data[0], _data[1]));
     }
   }
-  
-  /*
-  * verifies provided merkle proof against logged merkle roots
-  * requires hashed leaves to be sorted
-  * requires leafList.length % 2 == 0 (eg 64 leaves)
-  * leaf data provided a single concatenated string of (isShip bool value, x coordinate, y coordinate, salt)
-  */
+
+  /////////////
+  //UTILITIES//
+  /////////////
+
+  /** @dev verifies merkle proof against stored root
+   * @dev requires the merkle tree be a sorted, balanced array of hashed leaves
+   * @dev adapted from https://github.com/OpenZeppelin/openzeppelin-solidity/blob/master/contracts/cryptography/MerkleProof.sol
+   * @param _proof six hash merkle proof
+   * @param _root merkle root saved in game storage
+   * @param _leafData unhashed leaf data being revealed
+   * @return true if proof is validated; false if not
+   */
   function _verifyMerkleProof(
     bytes32[6] memory _proof, 
     bytes32 _root, 
@@ -859,20 +985,22 @@ contract MerkleShip {
     pure 
     returns(bool) 
   {
-    //hash leaf data
+    /** hash leaf data */
     bytes32 computedHash = keccak256(abi.encodePacked(_leafData));
-    //loop through proof to compute merkle root
+    /** loop through proof to compute merkle root */
     for (uint256 i = 0; i < _proof.length; i++) {
       bytes32 proofElement = _proof[i];
       computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
     }
-    //return true if proof matches stored merkle roof
+    /** return true if proof matches stored merkle roof */
     return computedHash == _root;
   }
 
-  /*
-  * utility function to check if coordinates are within a valid game board
-  */
+  /** @dev utility function to check if coordinates are within a valid game board
+   * @param _x x coordinate
+   * @param _y y coordinate
+   * @return true if coordinates are valid; false if not
+   */
   function _isCoordinateValid(uint8 _x, uint8 _y) 
     internal 
     view 
@@ -886,61 +1014,65 @@ contract MerkleShip {
     }
   }
 
-  /*
-  * utility function to convert coordinate to index
-  * eg, on an 8x8 board (0,0) == 0; (2,3) == 19;
-  */  
+  /** @dev utility function to convert coordinate to array index
+   * @param _x x coordinate
+   * @param _y y coordinate
+   * @return index from 0-63
+   */
   function _coordinateToIndex(uint8 _x, uint8 _y) 
     internal 
     view 
     returns(uint8) 
   {
     require (_isCoordinateValid(_x, _y), "coordinate must be valid");
-    //move starting index from 0 to 1 so multiplication works properly
+    /** move starting index from 0 to 1 so multiplication works properly */
     uint8 xShifted = _x + 1;
     uint8 yShifted = _y + 1;
 
     if (yShifted > 1) {
-      //if not in first row, multiply by row height and add reshifted x value 
+      /** if not in first row, multiply by row height and add reshifted x value */
       return uint8(yShifted * columns + xShifted - 1);
     } 
     else {
-      //if in first row, return reshifted x value
+      /** if in first row, return reshifted x value */
       return uint8(xShifted - 1);
     }
   }
 
-  /*
-  * helper function to return a substring
-  */
+ /** @dev utility function to return a substring
+   * @param _inputStr input string
+   * @param _index index of desired substring character
+   * @return one byte substring
+   */
   function _subString(string memory _inputStr, uint256 _index) 
     internal 
     pure 
     returns(bytes1) 
   { 
-    //convert to bytes to access substring index 
+    /** convert to bytes to access substring index */
     bytes memory _str = bytes(_inputStr);
-    //return first character
+    /** return first character */
     return _str[_index];
   }
 
-  /*
-  * helper function to make sure no one xss attacks the front end
-  */
+  /** @dev utility function to make sure no one xss attacks the front end with invalid strings
+   * @param _inputStr input string
+   * @return true if string is valid; false if not
+   */
   function _isStringValid(string memory _inputStr)
     internal 
     pure
     returns(bool)
   { 
-    //convert to bytes to access length property 
+    /** convert to bytes to access length property */
     bytes memory _str = bytes(_inputStr);
     uint256 _length = _str.length;
     
     require (_length <= 40,"string cannot be longer than 40 characters");
-    //check each character
+    /** check each character */
     for (uint256 i = 0; i < _length; i++) {
       require ( 
-        // a-z lowercase && " "
+        /** allowed: a-z lowercase && " " (a normal space character) */
         (_str[i] > 0x60 && _str[i] < 0x7b) || _str[i] == 0x20,
         "string contains invalid characters"
       );
