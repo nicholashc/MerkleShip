@@ -33,10 +33,19 @@
 		 	display: inline-block;
 		 	float:left;
 		}
+		.square:hover
+		{
+			background-color: #ddd;
+			cursor: pointer;
+		}
 		#frame
 		{
 			width: 1050px;
 			margin: 0 auto;
+		}
+		span
+		{
+			font:16pt arial;
 		}
 	</style>
 </head>
@@ -46,16 +55,26 @@
 		</div>
 		<div id="altBoard" class="listener">
 		</div>
-	<div>
+	</div>
+	<div id="frame" style="width:950px">
+		<div><span>count: </span><span id="count">12</span></div>
+		<div><span>account: </span><span id="account">loading...</span></div>
+	</div>
 	<script type="text/javascript">
+
+		//set up private board
 		for (var i=0; i< 64; i++){
     		var newDiv = document.createElement("div");
     		newDiv.id = "main" + i;
     		newDiv.className = "square";
+    		newDiv.setAttribute("data-ship", 0)
+    		newDiv.setAttribute("data-index", i)
     		document.getElementById("mainBoard")
     			.appendChild(newDiv)
     			.addEventListener("click", changeColor);
 		}
+
+		//set up guess board
 		for (var i=0; i< 64; i++){
 			var newDiv = document.createElement("div");
     		newDiv.id = "alt" + i;
@@ -64,14 +83,29 @@
     			.appendChild(newDiv)
     			.addEventListener("click", guess);
 		}
+
+		//board set up functions
+		var count = 12;
+
 		function changeColor() {
 			if (this.style.backgroundColor != "orange") {
-		    	this.style.backgroundColor = "orange";
+		    	if (count > 0) {
+		    		this.style.backgroundColor = "orange";
+		    		this.setAttribute("data-isShip", 1)
+		    		count--;
+		    		document.getElementById("count")	
+		    		.innerHTML = count;
+		    	}
 		    } else {
+	    		count++
+	    		document.getElementById("count")	
+	    		.innerHTML = count;
 		    	this.style.backgroundColor = "white";
+		    	this.setAttribute("data-isShip", 0)
 		    }
 		    return false;
 		}
+
 		function guess() {
 			if (this.innerHTML != "x") {
 		    	this.innerHTML = "x";
@@ -80,6 +114,34 @@
 		    }
 		    return false;
 		}
+
+		//demo
+		function popData() {
+			for (var i=0; i< 64; i++){
+				document.getElementById("main" + i)
+				.setAttribute("data-code", i + "somedata")
+			}
+		}
+
+		//web3
+		if (typeof window.ethereum !== 'undefined'
+		|| (typeof window.web3 !== 'undefined')) {
+		  const provider = window['ethereum'] || window.web3.currentProvider
+		}
+
+		ethereum.enable()
+		.then(function (accounts) {})
+		.then(function (display) {
+			var account = web3.eth.accounts[0]
+			document.getElementById("account")	
+	    	.innerHTML = account;
+		})
+		.catch(function (reason) {
+		  console.log(reason === "User rejected provider access")
+		})
+
+
+
 	</script>
 </body>
 </html>
