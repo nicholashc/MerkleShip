@@ -1,3 +1,4 @@
-Deployed to Kovan at the following address: TBD
+Deployed to Kovan at the following address: 0xb8fd123e17e7d5559b14223237a5209c7f6703f6
+Code verified on Etherscan https://kovan.etherscan.io/address/0xb8fd123e17e7d5559b14223237a5209c7f6703f6#code
 
 Get Kovan ETH at https://github.com/kovan-testnet/faucet or ping me on Ryver.
