@@ -41,32 +41,32 @@ Every turn, each player proposes a guess and in the same turn provides the merkl
 
 During the initial phase of the game, a player can propose a new game by commiting a merkle root of their game state. This player is refered to as Player A. Player A has the option of wagering value on the outcome of this game. Any value wagered is held in escrow in the smart contract. Proposed games may be cancelled by the proposer in order to recover their full wager. As soon as a second player (Player B) accepts a proposed game, neither player can cancel without conceding. 
 
-### 3B) ACTIVE GAME
+#### 3B) ACTIVE GAME
 
 The active game state consists of each player taking turns guessing and providing a merkle proof to reveal and verify the previous player's guess. Player A always goes first and has nothing to reveal on their first turn. Successful hits are tracked and the game automatically moves to Victory Pending state if either player reaches 12 hits. If at any point one of the players takes longer than 48 hours to complete a turn, the other player can trigger an Abandoned game state and claim both player's wagers. At any point, either player can concede the game. By conceding the game, the player recovers 20% of their wager, incentivizing quick resolution rather than abandonment.
 
-### 3C) POST GAME
+#### 3C) POST GAME
 
 There are several possible outcomes from the Victory Pending game state. If the losing player suspects the potential victor of dishonest play they can challenge the victory, requiring the potential victor to provide a full proof of their initial game state. If the potential victor confirms the validity of their intial game state the vicotry is locked in and they can claim the full wagered amount. If the potential victor cannot provide a valid proof or abandons the game during this state, the vicotry is reversed and the initial losing player can claim the full wagered amount.
 
-### 3D) SMACK TALK
+#### 3D) SMACK TALK
 
 With every turn, players have the opportunity to submit a short message that is broadcast as an event. This allows the players to communicate as the games progress. This feature has a length limit and restricts valid characters to lower case letters and spaces.
 
-### 3E) EMERGENCY STOP
+#### 3E) EMERGENCY STOP
 
 The only admin-level feature in the contract is the ability to trigger an emergency state. This function can only be called once and cannot be reversed. When this state is activated, players cannot continue active games, propose new games, or accept proposals. Players can trigger an emergency resolve of any of their games, which credits them with their original wagers. The only other function players may call in this state is the withdraw function. The admin address does not have the ability to influence the outcome of games or remove ether from the contract.
 
 ### 4) SECURITY CONSIDERATIONS
-### 4A) SAFE WITHDRAW PATTERNS
+#### 4A) SAFE WITHDRAW PATTERNS
 
 Ether only leaves the contract via a single function: `withdraw()`. Prizes or refunds are credited to a user balance rather than pushed directly. This prevents a potential denial of service vector where a smart contract refuses to accept funds send via `transfer`, preventing a game from resolving. Users then have to pull funds by sending a withdraw transaction. The user balance storage is set to zero before funds are transfered. While the `transfer` method gas stipend does not currently provide enough gas for state changes that could potential trigger a renentrancy attack, changing the balance to zero before sending funds protects against future protocal level changes that alter this invariant (looking at you constantinople).
 
-### 4B) GAME THEORY - GRIEFING
+#### 4B) GAME THEORY - GRIEFING
 
 In order to prevent one player from griefing the other by taking exceding long on each turn, there is a 48h time limit which resets with each new turn. If either player ever exceeds this limit, they risk losing their wagered funds.
 
-### 4C) GAME THEORY - DISHONEST INITIAL STATE
+#### 4C) GAME THEORY - DISHONEST INITIAL STATE
 
 While the merkle proofs provided each turn prove the validity of what is revealed, they do not provide any information about the honesty intitial game state that went into the commited merkle root. For example, a dishonest player might provide a merkle proof for a game where they only have ships on six squares rather than required twelve. The aformentioned challenge victory feature mediates this issue by potentially requiring any victor to prove the honesty of their intial game state before they can claim their prize. The player must provide the a full unhashed array of each square's initial state. This data is verified against the ship amount and length requirements and then a merkle tree is then recomputed onchain and compared to the stored merkle root.
 
@@ -75,3 +75,17 @@ While the merkle proofs provided each turn prove the validity of what is reveale
 There are several design desicions in this contract that attempt to minimize the gas costs with playing. 1) merkle proofs reduce the amount of storage written to the chain. 2) tightly packed structs store most of the game data in a reduced number of 256-bit words. 3) non-critical information like the smalk talk is pushed into events rather than written in storage. 4) the most gas intensive feature is validating the full game state in the event of a challenge. To reduce this cost, as much storage is zero-ed out as possible to take advantage of the gas refunds given when non-zero storage values are changed to zero.
 
 ### 6) PROJECT SET UP
+
+To run the truffle tests:
+
+```git clone #
+ganache-cli -l 10000000
+cd #
+truffle test
+```
+
+Interact with contract directly on the Kovan network at [etherscan](link).
+
+Interact with a limited proof of concept front end at [merkleship.surge.sh](https://merkleship.surge.sh).
+
+I am not providing a development environent to test the front end but you are welcome to run the /site directory locally. It is just vanila javascript, html, and css.
