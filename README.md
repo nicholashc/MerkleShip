@@ -94,6 +94,6 @@ ganache-cli -l 10000000
 truffle test
 ```
 
-Get Kovan ETH at [github.com/kovan-testnet/faucet](https://github.com/kovan-testnet/faucet). Interact with contract directly on the Kovan network at [0xb8fd123e17e7d5559b14223237a5209c7f6703f6](https://kovan.etherscan.io/address/0xb8fd123e17e7d5559b14223237a5209c7f6703f6#code). Or interact with the same contract via a limited proof of concept front end at [merkleship.surge.sh](https://merkleship.surge.sh).
+Get Kovan ETH at [github.com/kovan-testnet/faucet](https://github.com/kovan-testnet/faucet). Interact with contract directly on the Kovan network at [0x902d5c4d8869720d44dd4246c539b039cdeb803c](https://kovan.etherscan.io/address/0x902d5c4d8869720d44dd4246c539b039cdeb803c#code). Or interact with the same contract via a limited proof of concept front end at [merkleship.surge.sh](https://merkleship.surge.sh).
 
 I am not providing a development environment to test the front end but you are welcome to run the /site directory locally. It is just vanilla javascript, html, and css.
