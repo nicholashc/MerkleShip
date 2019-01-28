@@ -5,7 +5,7 @@ pragma experimental ABIEncoderV2;
 
 import "../contracts/SafeMath.sol";
 
-/** @title MerkleShip: Trustless Battleship on Ethereum */
+/** @title MerkleShip */
 contract MerkleShip {
 
   using SafeMath for *;
@@ -21,7 +21,7 @@ contract MerkleShip {
   /** global game id count */
   uint32 public gameCount;
   /** max turn length before a game is considered abandoned */ 
-  uint32  public abandonThreshold = 48 hours;
+  uint32 public abandonThreshold = 48 hours;
   /** board width */
   uint8 public rows = 8;
   /** board height */
@@ -962,6 +962,21 @@ contract MerkleShip {
     else if (_data.length == 2) {
       return keccak256(abi.encodePacked(_data[0], _data[1]));
     }
+  }
+
+  //////////////////
+  //VIEW FUNCTIONS//
+  //////////////////
+
+  /** @dev returns contract balance
+   * @return the current balance of the contract in wei
+   */
+  function getBalance() 
+    external
+    view
+    returns(uint256)
+  {
+    return address(this).balance;
   }
 
   /////////////
