@@ -258,7 +258,7 @@ contract MerkleShip {
    * @param _wager amount in wei (0 is a valid amount)
    * @param  _playerAMerkleRoot merkle root of initial game state
    */
-  function proposeGame(uint32 _wager, bytes32 _playerAMerkleRoot) 
+  function proposeGame(uint96 _wager, bytes32 _playerAMerkleRoot) 
     external 
     payable 
     notEmergency()
