@@ -1,171 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>MerkleShip</title>
-	<style type="text/css">
-		#mainBoard
-		{	
-		    width:416px;
-		    height:416px;
-		    margin:50px;
-		    border:1px solid black;
-		    background-color: white;
-		    float:left;
-		}
-		#altBoard
-		{	
-		    width:416px;
-		    height:416px;
-		    margin:50px;
-		    border:1px solid black;
-		    background-color: white;
-		    float:right;
-		}
-		.square
-		{
-		 	width:50px;
-		 	height:50px;
-		 	border:1px solid black;
-		 	background-color: white;
-		 	text-align:center;
-		 	font:29pt arial;
-		 	font-weight: lighter;
-		 	display: inline-block;
-		 	float:left;
-		}
-		.square:hover
-		{
-			background-color: #ddd;
-			cursor: pointer;
-		}
-		#frame
-		{
-			width: 1050px;
-			margin: 0 auto;
-		}
-		span
-		{
-			font:16pt arial;
-		}
-	</style>
+	<title>MerkleShip</title>	
+	<link rel="stylesheet" type="text/css" href="main.css">	
 </head>
 <body>
+
 	<div id="frame">
 		<div id="mainBoard" class="listener">
 		</div>
 		<div id="altBoard" class="listener">
 		</div>
 	</div>
+
 	<div id="frame" style="width:950px">
 		<div><span>ships left: </span><span id="count">12</span></div>
 		<div style="height:20px"></div>
 		<div><span>account: </span><span id="account">loading...</span></div>
-		<div><span>game count: </span><span id="game">loading...</span></div>
+		<div><span>active game count: </span><span id="game">loading...</span></div>
+		<div style="height:20px"></div>
+		<button onclick="clearData()">Compute Merkle Root</button>
+		<div style="height:20px"></div>
+		<div><span>merkle root: </span><span id="root"></span></div>
+		<div style="height:20px"></div>
+		<input id="proposeValue" type="number" step="0.001" placeholder="Wager Amount"/>
+		<button id="proposeButton" onclick="proposeGame()">Propose Game</button>
 	</div>
-	<script type="text/javascript">
 
-		//set up private board
-		for (var i=0; i< 64; i++){
-    		var newDiv = document.createElement("div");
-    		newDiv.id = "main" + i;
-    		newDiv.className = "square";
-    		newDiv.setAttribute("data-ship", 0)
-    		newDiv.setAttribute("data-index", i)
-    		document.getElementById("mainBoard")
-    			.appendChild(newDiv)
-    			.addEventListener("click", changeColor);
-		}
+	<script src="main.js"></script>
 
-		//set up guess board
-		for (var i=0; i< 64; i++){
-			var newDiv = document.createElement("div");
-    		newDiv.id = "alt" + i;
-    		newDiv.className = "square";
-    		document.getElementById("altBoard")
-    			.appendChild(newDiv)
-    			.addEventListener("click", guess);
-		}
-
-		//board set up functions
-		var count = 12;
-
-		function changeColor() {
-			if (this.style.backgroundColor != "orange") {
-		    	if (count > 0) {
-		    		this.style.backgroundColor = "orange";
-		    		this.setAttribute("data-isShip", 1)
-		    		count--;
-		    		document.getElementById("count")	
-		    		.innerHTML = count;
-		    	}
-		    } else {
-	    		count++
-	    		document.getElementById("count")	
-	    		.innerHTML = count;
-		    	this.style.backgroundColor = "white";
-		    	this.setAttribute("data-isShip", 0)
-		    }
-		    return false;
-		}
-
-		function guess() {
-			if (this.innerHTML != "x") {
-		    	this.innerHTML = "x";
-		    } else {
-		    	this.innerHTML = "";
-		    }
-		    return false;
-		}
-
-		//demo
-		function popData() {
-			for (var i=0; i< 64; i++){
-				document.getElementById("main" + i)
-				.setAttribute("data-code", i + "somedata")
-			}
-		}
-
-		//web3
-		let account;
-		window.addEventListener('load', async () => {
-			if (window.ethereum) {
-		    	window.web3 = new Web3(ethereum);
-		    	try {
-		    		await ethereum.enable();
-		    		account = web3.eth.accounts[0];
-		    		document.getElementById("account").innerHTML = account;
-		    	} catch (error) {
-		    		console.log(error);
-		    	}
-		  	} else if (window.web3) {
-		    	window.web3 = new Web3(web3.currentProvider);
-		    	account = web3.eth.accounts[0];
-		    	document.getElementById("account").innerHTML = account;
-		  	} else {
-		    	console.log('no web3!');
-		  	}
-		});
-
-
-		//contract initialization
-		const contractAbi = [{"constant":true,"inputs":[{"name":"","type":"address"}],"name":"userBalance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"},{"name":"_square","type":"uint8[2]"},{"name":"_proof","type":"bytes32[6]"},{"name":"_leafData","type":"string"},{"name":"_smackTalk","type":"string"}],"name":"guessAndReveal","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_wager","type":"uint32"},{"name":"_playerAMerkleRoot","type":"bytes32"}],"name":"proposeGame","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":true,"inputs":[],"name":"getBalance","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"resolveUnansweredChallenge","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[],"name":"withdraw","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"emergencyResolve","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"isStopped","outputs":[{"name":"","type":"bool"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"rows","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"gameCount","outputs":[{"name":"","type":"uint32"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"hitThreshold","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"concedeGame","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"cancelProposedGame","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"abandonThreshold","outputs":[{"name":"","type":"uint32"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"},{"name":"_playerBMerkleRoot","type":"bytes32"}],"name":"acceptGame","outputs":[],"payable":true,"stateMutability":"payable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"},{"name":"_leafData","type":"string[64]"}],"name":"answerChallenge","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"uint32"}],"name":"claimTimer","outputs":[{"name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":true,"inputs":[],"name":"columns","outputs":[{"name":"","type":"uint8"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"resolveAbandonedGame","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_message","type":"string"}],"name":"emergencyStop","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"resolveUnclaimedVictory","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[{"name":"","type":"uint32"}],"name":"games","outputs":[{"name":"id","type":"uint32"},{"name":"turnStartTime","type":"uint32"},{"name":"wager","type":"uint96"},{"name":"playerA","type":"address"},{"name":"playerB","type":"address"},{"name":"winner","type":"address"},{"name":"playerAhitCount","type":"uint8"},{"name":"playerBhitCount","type":"uint8"},{"name":"state","type":"uint8"},{"name":"turn","type":"uint8"},{"name":"playerAMerkleRoot","type":"bytes32"},{"name":"playerBMerkleRoot","type":"bytes32"}],"payable":false,"stateMutability":"view","type":"function"},{"constant":false,"inputs":[{"name":"_id","type":"uint32"}],"name":"challengeVictory","outputs":[],"payable":false,"stateMutability":"nonpayable","type":"function"},{"constant":true,"inputs":[],"name":"admin","outputs":[{"name":"","type":"address"}],"payable":false,"stateMutability":"view","type":"function"},{"inputs":[],"payable":false,"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"playerA","type":"address"},{"indexed":false,"name":"wager","type":"uint256"}],"name":"LogProposedGame","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"playerB","type":"address"},{"indexed":false,"name":"wager","type":"uint256"}],"name":"LogGameAccepted","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"playerB","type":"address"}],"name":"LogGameCancelled","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"sender","type":"address"},{"indexed":false,"name":"smackTalk","type":"string"}],"name":"LogSmackTalk","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"user","type":"address"},{"indexed":false,"name":"amount","type":"uint256"}],"name":"LogUserWithdraw","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"user","type":"address"},{"indexed":false,"name":"square","type":"uint256"}],"name":"LogGuess","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"user","type":"address"},{"indexed":false,"name":"verfied","type":"bool"},{"indexed":false,"name":"square","type":"uint256"},{"indexed":false,"name":"isHit","type":"bool"}],"name":"LogReveal","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"winner","type":"address"}],"name":"LogVictoryPending","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"challenger","type":"address"}],"name":"LogVictoryChallenged","type":"event"},{"anonymous":false,"inputs":[{"indexed":true,"name":"gameID","type":"uint256"},{"indexed":true,"name":"winner","type":"address"},{"indexed":false,"name":"message","type":"string"}],"name":"LogWinner","type":"event"},{"anonymous":false,"inputs":[{"indexed":false,"name":"message","type":"string"}],"name":"LogEmergency","type":"event"}];
-
-		const contractAddress = "0xB8fD123E17E7d5559B14223237A5209C7f6703f6";
-		const contractInstance = web3.eth.contract(contractAbi).at(contractAddress);
-
-		//var dataInterval = setInterval(function() {
-
-  		contractInstance.gameCount(function(err, res) {
-	    	if (err) {
-	        	console.log(err);
-	        	return;   
-	    	} else {
-	    		document.getElementById("game").innerHTML = res;
-	  		}
-	  	});
-
-		//}, 1000);
-
-	</script>
 </body>
 </html>
