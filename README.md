@@ -58,6 +58,9 @@ The only admin-level feature in the contract is the ability to trigger an emerge
 
 ### 4) SECURITY CONSIDERATIONS
 ### 4A) SAFE WITHDRAW PATTERNS
+
+Ether only leaves the contract via a single function: `withdraw()`. Prizes or refunds are credited to a user balance rather than pushed directly. This prevents a potential denial of service vector where a smart contract refuses to accept funds send via `transfer`, preventing a game from resolving. Users then have to pull funds by sending a withdraw transaction. The user balance storage is set to zero before funds are transfered. While the `transfer` method gas stipend does not currently provide enough gas for state changes that could potential trigger a renentrancy attack, changing the balance to zero before sending funds protects against future protocal level changes that alter this invariant (looking at you constantinople).
+
 ### 4B) GAME THEORY - GRIEFING
 ### 4C) GAME THEORY - DISHONEST INITIAL STATE
-### 5) SET UP
+### 5) PROJECT SET UP
