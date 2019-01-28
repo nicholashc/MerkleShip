@@ -8,7 +8,8 @@ MerkleShip is an implementation of the classic boardgame [Battleship](https://en
 2. Design Considerations	
 3. Gameplay
 4. Security Considerations
-5. Set Up
+5. Gas Considerations
+6. Project Set Up
 
 ### 1) GAME RULES
 
@@ -62,5 +63,15 @@ The only admin-level feature in the contract is the ability to trigger an emerge
 Ether only leaves the contract via a single function: `withdraw()`. Prizes or refunds are credited to a user balance rather than pushed directly. This prevents a potential denial of service vector where a smart contract refuses to accept funds send via `transfer`, preventing a game from resolving. Users then have to pull funds by sending a withdraw transaction. The user balance storage is set to zero before funds are transfered. While the `transfer` method gas stipend does not currently provide enough gas for state changes that could potential trigger a renentrancy attack, changing the balance to zero before sending funds protects against future protocal level changes that alter this invariant (looking at you constantinople).
 
 ### 4B) GAME THEORY - GRIEFING
+
+In order to prevent one player from griefing the other by taking exceding long on each turn, there is a 48h time limit which resets with each new turn. If either player ever exceeds this limit, they risk losing their wagered funds.
+
 ### 4C) GAME THEORY - DISHONEST INITIAL STATE
-### 5) PROJECT SET UP
+
+While the merkle proofs provided each turn prove the validity of what is revealed, they do not provide any information about the honesty intitial game state that went into the commited merkle root. For example, a dishonest player might provide a merkle proof for a game where they only have ships on six squares rather than required twelve. The aformentioned challenge victory feature mediates this issue by potentially requiring any victor to prove the honesty of their intial game state before they can claim their prize. The player must provide the a full unhashed array of each square's initial state. This data is verified against the ship amount and length requirements and then a merkle tree is then recomputed onchain and compared to the stored merkle root.
+
+### 5) GAS CONSIDERATIONS
+
+There are several design desicions in this contract that attempt to minimize the gas costs with playing. 1) merkle proofs reduce the amount of storage written to the chain. 2) tightly packed structs store most of the game data in a reduced number of 256-bit words. 3) non-critical information like the smalk talk is pushed into events rather than written in storage. 4) the most gas intensive feature is validating the full game state in the event of a challenge. To reduce this cost, as much storage is zero-ed out as possible to take advantage of the gas refunds given when non-zero storage values are changed to zero.
+
+### 6) PROJECT SET UP
