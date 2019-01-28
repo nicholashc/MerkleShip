@@ -94,6 +94,10 @@ ganache-cli -l 10000000
 truffle test
 ```
 
-Get Kovan ETH at [github.com/kovan-testnet/faucet](https://github.com/kovan-testnet/faucet). Interact with contract directly on the Kovan network at [0x902d5c4d8869720d44dd4246c539b039cdeb803c](https://kovan.etherscan.io/address/0x902d5c4d8869720d44dd4246c539b039cdeb803c#code). Or interact with the same contract via a limited proof of concept front end at [merkleship.surge.sh](https://merkleship.surge.sh).
+Get Kovan ETH at [github.com/kovan-testnet/faucet](https://github.com/kovan-testnet/faucet). Interact with contract directly on the Kovan network at [0x902d5c4d8869720d44dd4246c539b039cdeb803c](https://kovan.etherscan.io/address/0x902d5c4d8869720d44dd4246c539b039cdeb803c#code). Or interact with the same contract via a limited proof of concept front end at [merkleship.surge.sh](https://merkleship.surge.sh). This website reads some information about active games. It allows you to generate a merkle tree based on board data and submit it to the blockchain. It allows you to manually track guesses. Unfortunately, it does not yet calculate proofs automatically, track new guesses from the chain, or allow you to load in-progress games. I am not providing a development environment to test the front end but you are welcome to run the /site directory locally. It's just vanilla javascript, html, and css.
 
-I am not providing a development environment to test the front end but you are welcome to run the /site directory locally. It is just vanilla javascript, html, and css.
+In order to make calculating the merkle proofs easier, I've provided a node.js script in js/computeProof.js. To calculate a proof, replace the array called `leaves` with your data console logged from the website (or generate your own). Run the script with: 
+```
+npm install
+node computeProof.js
+```
