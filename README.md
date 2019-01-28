@@ -88,9 +88,9 @@ There are several design decisions in this contract that attempt to minimize the
 To run the truffle tests:
 
 ```
-git clone #
+git clone https://github.com/nicholashc/MerkleShip/
+cd MerkleShip/truffle
 ganache-cli -l 10000000
-cd #
 truffle test
 ```
 
